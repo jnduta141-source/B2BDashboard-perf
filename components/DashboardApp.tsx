@@ -2297,13 +2297,8 @@ export default function DashboardApp(props: Props = {}) {
     currency: a.currency,
     balance: a.balance,
   }));
-  const homeAvailableLedgerItems =
-    s.balanceView === "stablecoin"
-      ? stableLedgerItems.filter((a) => (a.currency || "").toUpperCase() === "USDC")
-      : s.balanceView === "fiat"
-        ? fiatLedgerItems
-        : [...fiatLedgerItems, ...stableLedgerItems];
-  const pendingLedgerItems = homeAvailableLedgerItems
+  const allHomeLedgerItems = [...fiatLedgerItems, ...stableLedgerItems];
+  const pendingLedgerItems = allHomeLedgerItems
     .map((item) => ({
       currency: item.currency,
       balance: pendingBalanceFromAccount(item.balance),
@@ -2317,13 +2312,13 @@ export default function DashboardApp(props: Props = {}) {
     ? s.displayCurrency
     : DEFAULT_DISPLAY_CURRENCY;
   const homeDisplayTotal = totalBalanceInDisplayCurrency(
-    homeAvailableLedgerItems,
+    allHomeLedgerItems,
     displayCurrency,
     homeFxRates,
     { maximumFractionDigits: 2 },
   );
   const homeUsdTotal = totalBalanceInDisplayCurrency(
-    homeAvailableLedgerItems,
+    allHomeLedgerItems,
     "USD",
     homeFxRates,
     { maximumFractionDigits: 2 },
@@ -2342,8 +2337,8 @@ export default function DashboardApp(props: Props = {}) {
     { maximumFractionDigits: 0 },
   );
   const homePendingAmountComplete =
-    homeAvailableLedgerItems.length > 0 &&
-    pendingLedgerItems.length === homeAvailableLedgerItems.length;
+    allHomeLedgerItems.length > 0 &&
+    pendingLedgerItems.length === allHomeLedgerItems.length;
   const awaitingSettlementLabel = homePendingAmountComplete
     ? (homePendingUsd.total == null
         ? "—"
@@ -2392,10 +2387,10 @@ export default function DashboardApp(props: Props = {}) {
         { label: "Money out · 30 days", value: fmtUsd(totals?.money_out_30d), icon: "↓", iconBg: "var(--surface3)", iconColor: "var(--muted)" },
         { label: "Awaiting settlement", value: awaitingSettlementLabel, icon: "◔", iconBg: "var(--amber-tint)", iconColor: "var(--amber)" },
       ];
-  const homeBalanceSub = !homeCurrencyChips.length
+  const homeBalanceSub = !allHomeLedgerItems.length
     ? "Balance not yet available"
     : homeDisplayTotal.excluded.length
-      ? `Across all wallets and accounts · excludes ${homeDisplayTotal.excluded.join(", ")}`
+      ? `Across all wallets and accounts · excludes ${homeDisplayTotal.excluded.join(", ")} (no FX rate)`
       : "Across all wallets and accounts";
   const homeRecent = decoratedAll.slice(0, 4);
   const mainWalletBalance =
@@ -3198,7 +3193,7 @@ export default function DashboardApp(props: Props = {}) {
 </select>
 </label>
 </div>
-<div className="ep-home__balance-tabs">
+<div className="ep-home__balance-tabs" role="group" aria-label="Filter wallet list">
 {(balanceViewTabs || []).map((bv: any, __i1: number) => (
 <React.Fragment key={__i1}>
 <button onClick={bv.select} className="ep-home__balance-tab" style={{background: (bv.bg), color: (bv.color)}}>{bv.label}</button>
