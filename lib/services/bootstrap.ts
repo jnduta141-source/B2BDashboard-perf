@@ -152,6 +152,8 @@ export function mapBootstrap(raw: BootstrapOut): DashboardBootstrap {
   const identity = raw.identity;
   const authMePatch: DashboardBootstrap["authMePatch"] = {
     role: identity.role,
+    // Status-only hint for /auth/me cache. Callers must merge into an existing
+    // profile — never replace a full kyb_summary with this stub alone.
     kyb_summary: identity.kyb_status
       ? { profile: { kyb_status: identity.kyb_status } }
       : null,

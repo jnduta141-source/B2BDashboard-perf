@@ -282,6 +282,34 @@ export function isKybInProgress(status: string | null | undefined): boolean {
   return status === "pending";
 }
 
+export function isStatusOnlyKybSummary(
+  summary: { profile?: Record<string, unknown> | null } | null | undefined,
+): boolean {
+  const profile = summary?.profile;
+  if (!profile || typeof profile !== "object") return false;
+  const keys = Object.keys(profile).filter((k) => profile[k] != null && profile[k] !== "");
+  return keys.length > 0 && keys.every((k) => k === "kyb_status");
+}
+
+/** Merge bootstrap/login status stubs into a full /auth/me KYB summary without wiping fields. */
+export function mergeKybSummaryCache(
+  previous: { profile?: Record<string, unknown> | null } | null | undefined,
+  incoming: { profile?: Record<string, unknown> | null } | null | undefined,
+): { profile: Record<string, unknown> | null } | null {
+  if (incoming == null) return previous ?? null;
+  if (!previous?.profile) return incoming as { profile: Record<string, unknown> | null };
+  if (isStatusOnlyKybSummary(incoming)) {
+    const status = incoming.profile?.kyb_status;
+    return {
+      profile: {
+        ...previous.profile,
+        ...(status != null ? { kyb_status: status } : {}),
+      },
+    };
+  }
+  return incoming as { profile: Record<string, unknown> | null };
+}
+
 /** Final submit done — vault `pending_review` → Mboka `submitted`. */
 export function isKybInReview(status: string | null | undefined): boolean {
   return status === "submitted";
@@ -306,6 +334,7 @@ function idempotencyHeaders(key?: string): RequestOptions | undefined {
 
 export type InferWizardStartStepInput = {
   profile?: KybProfile | Record<string, unknown> | null;
+  business?: { legal_name?: string | null; country?: string; registration_number?: string | null } | null;
   hasDocumentRequirements?: boolean;
   hasUploadedDocuments?: boolean;
 };
@@ -313,26 +342,27 @@ export type InferWizardStartStepInput = {
 /**
  * Restore wizard step from an existing pending profile.
  * Address+associates → 2; known requirements / uploaded docs → 3.
+ * Legal name / registration often live on the business row, not the KYB profile.
  */
 export function inferWizardStartStep(input: InferWizardStartStepInput): 1 | 2 | 3 {
   const profile = input.profile as KybProfile | null | undefined;
-  if (!profile) return 1;
+  if (!profile && !input.business) return 1;
 
-  const hasBusinessBasics = !!(
-    String(profile.legal_name || "").trim() &&
-    String(profile.registration_number || "").trim() &&
-    profile.business_type
-  );
+  const legalName =
+    String(profile?.legal_name || input.business?.legal_name || "").trim();
+  const registration =
+    String(profile?.registration_number || input.business?.registration_number || "").trim();
+  const hasBusinessBasics = !!(legalName && registration && profile?.business_type);
   if (!hasBusinessBasics) return 1;
 
-  const addr = profile.registered_address;
+  const addr = profile?.registered_address;
   const hasAddress = !!(addr && String(addr.street || "").trim() && String(addr.city || "").trim());
-  const associates = profile.associates ?? [];
+  const associates = profile?.associates ?? [];
   const hasAssociates =
     Array.isArray(associates) &&
     associates.some((a) => String(a?.full_name?.first_name || "").trim());
 
-  if (!hasAddress || !hasAssociates) return hasBusinessBasics ? 2 : 1;
+  if (!hasAddress || !hasAssociates) return 2;
 
   if (input.hasDocumentRequirements || input.hasUploadedDocuments) return 3;
   return 2;

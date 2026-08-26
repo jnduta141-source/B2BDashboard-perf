@@ -87,22 +87,41 @@ export function useKybWizard(opts: UseKybWizardOptions) {
     sessionInitializedRef.current = true;
     const loadId = ++resumeLoadIdRef.current;
 
-    const nextDraft = profileDraftFromSummary(opts.kybSummary, opts.business);
-    const profile = opts.kybSummary?.profile ?? null;
-    setDraft(nextDraft);
+    const businessId = opts.businessId;
+    const business = opts.business;
+
     setError("");
     setSubmitted(false);
     setRequirements(null);
     setDocRows([]);
     setShareholderId(null);
 
-    // Optimistic step from profile only; refined after document state loads.
-    setStep(inferWizardStartStep({ profile }));
+    // Optimistic draft from cache; refined after GET …/kyb loads the saved profile.
+    const cachedDraft = profileDraftFromSummary(opts.kybSummary, business);
+    setDraft(cachedDraft);
+    setStep(
+      inferWizardStartStep({
+        profile: opts.kybSummary?.profile ?? null,
+        business,
+      }),
+    );
 
-    const businessId = opts.businessId;
     if (!businessId) return;
 
     void (async () => {
+      let summaryProfile: Record<string, unknown> | null =
+        (opts.kybSummary?.profile as Record<string, unknown> | null) ?? null;
+
+      try {
+        const summary = await kybApi.summary(businessId);
+        if (loadId !== resumeLoadIdRef.current) return;
+        summaryProfile = (summary.profile as Record<string, unknown> | null) ?? null;
+        const nextDraft = profileDraftFromSummary(summary, business);
+        setDraft(nextDraft);
+      } catch {
+        // Keep cached draft when summary fetch fails.
+      }
+
       let reqs: KybDocumentRequirements | null = null;
       let hasUploadedDocuments = false;
 
@@ -114,10 +133,10 @@ export function useKybWizard(opts: UseKybWizardOptions) {
       }
 
       try {
-        reqs = await kybApi.documentRequirements(
-          businessId,
-          nextDraft.country || undefined,
-        );
+        const country =
+          String(summaryProfile?.country || business?.country || cachedDraft.country || "").trim() ||
+          undefined;
+        reqs = await kybApi.documentRequirements(businessId, country);
         if (
           reqs.business_documents.some((d) => d.uploaded) ||
           reqs.shareholder_documents.some((d) => d.uploaded)
@@ -128,12 +147,15 @@ export function useKybWizard(opts: UseKybWizardOptions) {
         // Requirements may be unavailable before initiate; keep profile step.
       }
 
-      // Ignore stale loads when business changes mid-flight (not on every re-render).
       if (loadId !== resumeLoadIdRef.current) return;
 
       const hasDocumentRequirements = !!reqs && hasUploadedDocuments;
+      const draftForRows = profileDraftFromSummary(
+        summaryProfile ? { profile: summaryProfile } : opts.kybSummary,
+        business,
+      );
       if (reqs && hasUploadedDocuments) {
-        const associateRef = nextDraft.associates[0]?.id;
+        const associateRef = draftForRows.associates[0]?.id;
         setRequirements(reqs);
         setDocRows([
           ...reqs.business_documents.map((d) => ({
@@ -164,7 +186,8 @@ export function useKybWizard(opts: UseKybWizardOptions) {
 
       setStep(
         inferWizardStartStep({
-          profile,
+          profile: summaryProfile,
+          business,
           hasDocumentRequirements,
           hasUploadedDocuments,
         }),

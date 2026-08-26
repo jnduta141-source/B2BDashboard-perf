@@ -169,6 +169,7 @@ describe("useKybWizard restore + submit poll", () => {
   });
 
   it("does not wipe step when reopening the same business mid-flow", async () => {
+    summary.mockResolvedValue({ profile: { kyb_status: "pending", legal_name: "Acme" } });
     const { result, rerender } = renderHook(
       ({ enabled }: { enabled: boolean }) =>
         useKybWizard({
@@ -190,6 +191,41 @@ describe("useKybWizard restore + submit poll", () => {
 
     expect(result.current.draft.legalName).toBe("Edited Name");
     expect(result.current.step).toBe(1);
+  });
+
+  it("reloads saved profile fields from GET …/kyb on open", async () => {
+    summary.mockResolvedValue({
+      profile: {
+        ...completePendingProfile,
+        business_type: "LimitedCompany",
+        industry: "Fintech",
+        estimated_employees: "1-10",
+        annual_revenue_range: "100kTo1M",
+        source_of_funds: "Revenue",
+      },
+    });
+
+    const { result } = renderHook(() =>
+      useKybWizard({
+        businessId: 7,
+        enabled: true,
+        // Status-only stub like bootstrap used to leave in auth-me cache.
+        kybSummary: { profile: { kyb_status: "pending" } },
+        business: {
+          legal_name: "element",
+          country: "KE",
+          registration_number: "PV123456",
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(summary).toHaveBeenCalledWith(7);
+      expect(result.current.draft.businessType).toBe("LimitedCompany");
+      expect(result.current.draft.industry).toBe("Fintech");
+      expect(result.current.draft.estimatedEmployees).toBe("1-10");
+      expect(result.current.step).toBe(2);
+    });
   });
 
   it("polls verifier status after submitForReview succeeds", async () => {

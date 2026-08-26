@@ -198,7 +198,7 @@ import VerificationScreen from "@/components/verification/VerificationScreen";
 import KybWizardModal from "@/components/verification/KybWizardModal";
 import KybGateBanner from "@/components/verification/KybGateBanner";
 import { useKybWizard } from "@/lib/hooks/useKybWizard";
-import { canOpenKybWizard, describeKybStatus, isKybApproved, kybTierDisplay } from "@/lib/services/kyb";
+import { canOpenKybWizard, describeKybStatus, isKybApproved, kybTierDisplay, mergeKybSummaryCache } from "@/lib/services/kyb";
 
 type Props = {
   boostDarkContrast?: boolean;
@@ -383,21 +383,27 @@ export default function DashboardApp(props: Props = {}) {
     queryClient.setQueryData(["auth-me"], (prev: AuthMe | undefined) => {
       if (!prev) return prev;
       const prevName = prev.business?.name?.trim() || "";
+      const mergedKyb = mergeKybSummaryCache(prev.kyb_summary, patch.kyb_summary);
       if (prevName && prevName !== "Your business") {
         return {
           ...prev,
           role: patch.role ?? prev.role,
-          kyb_summary: patch.kyb_summary ?? prev.kyb_summary,
+          kyb_summary: mergedKyb,
         };
       }
       return {
         ...prev,
         role: patch.role ?? prev.role,
-        kyb_summary: patch.kyb_summary ?? prev.kyb_summary,
+        kyb_summary: mergedKyb,
         business: patch.business
           ? {
               ...(prev.business ?? patch.business),
               ...patch.business,
+              // Keep richer /auth/me business fields when bootstrap only has a name stub.
+              legal_name: patch.business.legal_name ?? prev.business?.legal_name ?? null,
+              registration_number:
+                patch.business.registration_number ?? prev.business?.registration_number ?? null,
+              country: patch.business.country || prev.business?.country || "",
             }
           : prev.business,
       };
