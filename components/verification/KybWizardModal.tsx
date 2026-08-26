@@ -41,7 +41,7 @@ export type KybWizardModalProps = {
   busy: boolean;
   docRows: DocumentUploadState[];
   setDocumentFile: (index: number, file: File | null) => void;
-  uploadDocumentRow: (index: number) => void;
+  uploadDocumentRow: (index: number, fileOverride?: File | null) => void | Promise<boolean>;
   docsComplete: boolean;
   submitted: boolean;
   nextStep: () => void;
@@ -237,15 +237,17 @@ export default function KybWizardModal(p: KybWizardModalProps) {
       {p.step === 3 ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           <span style={{ fontSize: "12.5px", fontWeight: "700", color: "var(--muted)" }}>Step 3 · Upload documents</span>
-          <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>PDF, JPEG, or PNG — max 10 MB each. Files upload via the server proxy; tokens never reach the browser.</p>
+          <p style={{ margin: 0, fontSize: "12px", color: "var(--muted)" }}>
+            PDF, JPEG, or PNG — max 10 MB each. Choosing a file uploads it automatically; wait until each row shows Submitted.
+          </p>
           {(p.docRows || []).map((row, i) => (
             <div key={row.requirementType + i} style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "14px", borderRadius: "14px", background: "var(--surface2)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                 <div style={{ flex: "1", minWidth: "140px" }}>
                   <b style={{ fontSize: "13px" }}>{row.label}</b>
-                  <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
+                  <div style={{ fontSize: "11px", color: row.submitted ? "var(--indigo-text)" : "var(--muted)", marginTop: "2px", fontWeight: row.submitted ? 700 : 500 }}>
                     {row.category === "shareholder" ? "Shareholder ID" : "Business document"}
-                    {row.submitted ? " · submitted" : ""}
+                    {row.uploading ? " · uploading…" : row.submitted ? " · submitted ✓" : row.file ? " · ready to upload" : ""}
                   </div>
                 </div>
                 <input
@@ -261,18 +263,19 @@ export default function KybWizardModal(p: KybWizardModalProps) {
                   type="button"
                   disabled={row.uploading || row.submitted}
                   onClick={() => fileRefs.current[i]?.click()}
-                  style={{ padding: "6px 13px", borderRadius: "999px", border: "none", background: "var(--indigo-tint)", color: "var(--indigo-text)", fontSize: "11px", fontWeight: "700", cursor: row.submitted ? "default" : "pointer", opacity: row.submitted ? 0.6 : 1 }}
+                  style={{ padding: "6px 13px", borderRadius: "999px", border: "none", background: row.submitted ? "var(--indigo-tint)" : "var(--indigo)", color: row.submitted ? "var(--indigo-text)" : "var(--indigo-on)", fontSize: "11px", fontWeight: "700", cursor: row.submitted ? "default" : "pointer", opacity: row.uploading ? 0.7 : 1 }}
                 >
-                  {row.file ? row.file.name.slice(0, 18) : "Choose file"}
+                  {row.uploading ? "Uploading…" : row.submitted ? "Done" : row.file ? row.file.name.slice(0, 18) : "Choose file"}
                 </button>
-                <button
-                  type="button"
-                  disabled={row.uploading || row.submitted || !row.file}
-                  onClick={() => p.uploadDocumentRow(i)}
-                  style={{ padding: "6px 13px", borderRadius: "999px", border: "none", background: "var(--indigo)", color: "var(--indigo-on)", fontSize: "11px", fontWeight: "700", cursor: row.uploading ? "wait" : "pointer", opacity: row.uploading ? 0.7 : 1 }}
-                >
-                  {row.uploading ? "Uploading…" : row.submitted ? "Done" : "Upload"}
-                </button>
+                {!row.submitted && row.file && !row.uploading ? (
+                  <button
+                    type="button"
+                    onClick={() => void p.uploadDocumentRow(i, row.file)}
+                    style={{ padding: "6px 13px", borderRadius: "999px", border: "1.5px solid var(--border)", background: "var(--surface)", color: "var(--ink)", fontSize: "11px", fontWeight: "700", cursor: "pointer" }}
+                  >
+                    Retry upload
+                  </button>
+                ) : null}
               </div>
               {row.error ? (
                 <div style={{ fontSize: "11px", color: "var(--red)", fontWeight: 600 }}>{row.error}</div>

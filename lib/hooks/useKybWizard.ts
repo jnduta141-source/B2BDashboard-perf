@@ -314,19 +314,24 @@ export function useKybWizard(opts: UseKybWizardOptions) {
   }, [draft.associates, opts.businessId, shareholderId]);
 
   const uploadDocumentRow = useCallback(
-    async (index: number) => {
-      if (!opts.businessId) return;
+    async (index: number, fileOverride?: File | null): Promise<boolean> => {
+      if (!opts.businessId) return false;
       const row = docRows[index];
-      if (!row?.file) {
+      const file = fileOverride ?? row?.file ?? null;
+      if (!row || !file) {
         setDocRows((rows) =>
           rows.map((r, i) => (i === index ? { ...r, error: "Choose a file first." } : r)),
         );
-        return;
+        return false;
       }
-      setDocRows((rows) => rows.map((r, i) => (i === index ? { ...r, uploading: true, error: "" } : r)));
+      setDocRows((rows) =>
+        rows.map((r, i) =>
+          i === index ? { ...r, file, uploading: true, error: "", submitted: false } : r,
+        ),
+      );
       try {
         const form = buildUploadFormData({
-          file: row.file,
+          file,
           documentType: row.requirementType,
           issuingCountry: row.issuingCountryRequired ? draft.country : undefined,
           associateRefId: row.associateRefId,
@@ -342,30 +347,51 @@ export function useKybWizard(opts: UseKybWizardOptions) {
         setDocRows((rows) =>
           rows.map((r, i) =>
             i === index
-              ? { ...r, uploading: false, uploadedDocId: uploaded.id, submitted: true, error: "" }
+              ? {
+                  ...r,
+                  file,
+                  uploading: false,
+                  uploadedDocId: uploaded.id,
+                  submitted: true,
+                  error: "",
+                }
               : r,
           ),
         );
+        return true;
       } catch (err) {
         setDocRows((rows) =>
           rows.map((r, i) =>
             i === index
               ? {
                   ...r,
+                  file,
                   uploading: false,
                   error: formatKybServiceError(err),
                 }
               : r,
           ),
         );
+        return false;
       }
     },
     [docRows, draft.country, ensureShareholderRegistered, opts.businessId],
   );
 
-  const setDocumentFile = useCallback((index: number, file: File | null) => {
-    setDocRows((rows) => rows.map((r, i) => (i === index ? { ...r, file, error: "" } : r)));
-  }, []);
+  const setDocumentFile = useCallback(
+    (index: number, file: File | null) => {
+      setDocRows((rows) =>
+        rows.map((r, i) =>
+          i === index ? { ...r, file, submitted: false, error: "" } : r,
+        ),
+      );
+      // Selecting a file starts upload immediately — no separate Upload click needed.
+      if (file) {
+        void uploadDocumentRow(index, file);
+      }
+    },
+    [uploadDocumentRow],
+  );
 
   const pollAfterSubmit = useCallback(async (businessId: number) => {
     for (let attempt = 0; attempt < POST_SUBMIT_POLL_ATTEMPTS; attempt += 1) {
@@ -427,16 +453,33 @@ export function useKybWizard(opts: UseKybWizardOptions) {
       return;
     }
     if (step === 3) {
-      const pending = docRows.some((r) => !r.submitted);
-      if (pending) {
-        setError("Upload and submit every required document before continuing.");
+      const missingFile = docRows.some((r) => !r.submitted && !r.file);
+      if (missingFile) {
+        setError("Choose a file for every required document before continuing.");
         return;
       }
+      const pending = docRows
+        .map((r, i) => ({ row: r, index: i }))
+        .filter(({ row }) => !row.submitted);
+      if (pending.length) {
+        setBusy(true);
+        setError("");
+        for (const { row, index } of pending) {
+          const ok = await uploadDocumentRow(index, row.file);
+          if (!ok) {
+            setBusy(false);
+            setError("Some documents failed to upload. Fix the errors above and try again.");
+            return;
+          }
+        }
+        setBusy(false);
+      }
+      setError("");
       setStep(4);
       return;
     }
     await submitForReview();
-  }, [docRows, draft, prepareDocuments, saveProfile, step, submitForReview]);
+  }, [docRows, draft, prepareDocuments, saveProfile, step, submitForReview, uploadDocumentRow]);
 
   const backStep = useCallback(() => {
     setError("");

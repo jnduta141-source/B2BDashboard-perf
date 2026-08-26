@@ -12,6 +12,8 @@ const createProfile = vi.fn();
 const upsertAddress = vi.fn();
 const documentRequirements = vi.fn();
 const listDocuments = vi.fn();
+const uploadDocument = vi.fn();
+const submitDocument = vi.fn();
 
 vi.mock("@/lib/services/kyb", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/services/kyb")>();
@@ -28,8 +30,8 @@ vi.mock("@/lib/services/kyb", async (importOriginal) => {
       upsertAddress: (...args: unknown[]) => upsertAddress(...args),
       documentRequirements: (...args: unknown[]) => documentRequirements(...args),
       listDocuments: (...args: unknown[]) => listDocuments(...args),
-      uploadDocument: vi.fn(),
-      submitDocument: vi.fn(),
+      uploadDocument: (...args: unknown[]) => uploadDocument(...args),
+      submitDocument: (...args: unknown[]) => submitDocument(...args),
       listShareholders: vi.fn().mockResolvedValue({ shareholders: [] }),
       addShareholder: vi.fn(),
       submitShareholderDocument: vi.fn(),
@@ -282,5 +284,61 @@ describe("useKybWizard restore + submit poll", () => {
       expect(result.current.error).toMatch(/identity.*tax_id/i);
       expect(result.current.submitted).toBe(false);
     });
+  });
+
+  it("auto-uploads when a file is selected", async () => {
+    uploadDocument.mockResolvedValue({
+      id: 11,
+      document_type: "certificate_of_incorporation",
+      provider_document_type: "certificate_of_incorporation",
+      is_active: true,
+    });
+    submitDocument.mockResolvedValue({});
+    documentRequirements.mockResolvedValue({
+      provider: "international_ramp",
+      corridor: "KE",
+      business_documents: [
+        {
+          type: "certificate_of_incorporation",
+          category: "business",
+          label: "Certificate",
+          requires_associate_ref_id: false,
+          issuing_country_required: false,
+          uploaded: false,
+        },
+      ],
+      shareholder_documents: [],
+      disclaimer: null,
+    });
+
+    const { result } = renderHook(() =>
+      useKybWizard({
+        businessId: 9,
+        enabled: true,
+        kybSummary: { profile: completePendingProfile },
+        business: { legal_name: "Acme", country: "KE", registration_number: "R1" },
+      }),
+    );
+
+    await waitFor(() => expect(result.current.step).toBe(2));
+    await act(async () => {
+      await result.current.nextStep();
+    });
+    await waitFor(() => expect(result.current.step).toBe(3));
+
+    const file = new File(["%PDF"], "cert.pdf", { type: "application/pdf" });
+    await act(async () => {
+      result.current.setDocumentFile(0, file);
+    });
+    await waitFor(() => {
+      expect(uploadDocument).toHaveBeenCalled();
+      expect(submitDocument).toHaveBeenCalled();
+      expect(result.current.docRows[0]?.submitted).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.nextStep();
+    });
+    await waitFor(() => expect(result.current.step).toBe(4));
   });
 });
