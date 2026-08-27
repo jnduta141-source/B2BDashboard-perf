@@ -170,3 +170,66 @@ describe("mergeWalletPaymentsWithElementActivity", () => {
     expect(merged[1]).toBe(older);
   });
 });
+
+describe("presentUnmatchedOnchainPayments + mergePresentedActivityRows", () => {
+  it("surfaces unmatched on-chain rows for Home / Transactions merges", async () => {
+    const {
+      collectPresentedTxHashes,
+      mergePresentedActivityRows,
+      presentUnmatchedOnchainPayments,
+    } = await import("./walletPaymentsActivity");
+
+    const linked = elementActivity();
+    const unmatched = presentUnmatchedOnchainPayments({
+      payments: [
+        { network: "stellar_testnet", payment: payment() },
+        {
+          network: "stellar_testnet",
+          payment: payment({
+            txHash: OTHER_HASH,
+            amount: "9.50",
+            direction: "out",
+            createdAt: "2026-08-21T10:00:00Z",
+            pagingToken: "122",
+          }),
+        },
+      ],
+      elementTxHashes: collectPresentedTxHashes([linked]),
+    });
+
+    expect(unmatched).toHaveLength(1);
+    expect(unmatched[0]?.id).toBe(`onchain:${OTHER_HASH}`);
+
+    const merged = mergePresentedActivityRows([linked], unmatched, 4);
+    expect(merged[0]?.id).toBe(`onchain:${OTHER_HASH}`);
+    expect(merged[1]).toBe(linked);
+  });
+
+  it("filters presented on-chain rows by direction and currency", async () => {
+    const { filterPresentedActivityRows, presentUnmatchedOnchainPayments } =
+      await import("./walletPaymentsActivity");
+    const rows = presentUnmatchedOnchainPayments({
+      payments: [
+        { network: "stellar_testnet", payment: payment({ direction: "in" }) },
+        {
+          network: "stellar_testnet",
+          payment: payment({
+            txHash: OTHER_HASH,
+            direction: "out",
+            amount: "2",
+            createdAt: "2026-08-21T10:00:00Z",
+            pagingToken: "122",
+          }),
+        },
+      ],
+      elementTxHashes: new Set(),
+    });
+
+    expect(
+      filterPresentedActivityRows(rows, { primary: "outgoing", currency: "USDC" }),
+    ).toHaveLength(1);
+    expect(
+      filterPresentedActivityRows(rows, { primary: "incoming" })[0]?.direction,
+    ).toBe("in");
+  });
+});

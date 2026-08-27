@@ -17,11 +17,15 @@ import { transactionsApi, type Transaction } from "@/lib/services/transactions";
 import { recentActivityForFinancialAccount } from "@/lib/services/accountCredits";
 import { presentTransaction } from "@/lib/services/transactionPresentation";
 import { describeTransactionStatus } from "@/lib/services/transactionStatus";
-import { useStellarWalletPayments } from "@/lib/hooks/useStellarWalletPayments";
+import { useStellarWalletPaymentsForAccounts } from "@/lib/hooks/useStellarWalletPayments";
 import {
+  collectPresentedTxHashes,
+  filterPresentedActivityRows,
+  mergePresentedActivityRows,
   mergeWalletPaymentsWithElementActivity,
   parseOnchainTxDetailId,
   presentOnchainWalletPayment,
+  presentUnmatchedOnchainPayments,
   onchainTxDetailId,
 } from "@/lib/stellar/walletPaymentsActivity";
 import { isStellarUsdcRail } from "@/lib/stellar/network";
@@ -2387,28 +2391,7 @@ export default function DashboardApp(props: Props = {}) {
       currency: s.txCurrency,
       dateRange: s.txDateRange,
     }).map(decorateTx);
-    const filteredTransactions = txUsesLatestFifty
-      ? latestFiftyMatches
-      : transactionsPageQuery.items.map(decorateTx);
-    // Fetched by id (txDetailQuery), independent of the list above — see
-    // openTxDetail. Falls back to the list's cached copy while the detail
-    // fetch is in flight so the modal isn't blank on first open.
-    // Horizon-only wallet rows use `onchain:<hash>` and skip the API.
-    const listTxDetail =
-      decoratedAll.find((t) => t.id === s.selectedTxId) ??
-      filteredTransactions.find((t) => t.id === s.selectedTxId);
-    const apiTxDetail = txDetailQuery.data ? decorateTx(txDetailQuery.data) : null;
-    const txDetailBase = apiTxDetail ?? listTxDetail;
-    const txLiveStatus =
-      s.modal === "txDetail" &&
-      txDetailBase &&
-      selectedTxIsMerchantOrder &&
-      !txStatusQuery.isTerminal
-        ? {
-            label: txStatusQuery.isFrozen ? "Frozen — needs review" : "Tracking live — updates automatically",
-            isFetching: txStatusQuery.isFetching,
-          }
-        : null;
+    const pageTransactions = transactionsPageQuery.items.map(decorateTx);
     // Deposit account status pills — balances come from partner `balance`
     // when present (see docs/api-contract.md / lib/services/balances.ts).
     const depositStatusPalette: Record<string, [string, string]> = {
@@ -2436,12 +2419,56 @@ export default function DashboardApp(props: Props = {}) {
             (a) => a.id === s.selectedAcctKey.slice("stablecoin:".length),
           ) ?? null
         : null;
-    const stellarWalletPaymentsQuery = useStellarWalletPayments({
-      network: selectedStablecoinAccount?.network,
-      currency: selectedStablecoinAccount?.currency,
-      address: selectedStablecoinAccount?.walletAddress,
-      limit: 25,
+    const stellarWalletPaymentsQuery = useStellarWalletPaymentsForAccounts(
+      stablecoinAccountsList.map((account) => ({
+        id: account.id,
+        network: account.network,
+        currency: account.currency,
+        walletAddress: account.walletAddress,
+      })),
+      { limit: 25 },
+    );
+    const elementTxHashes = collectPresentedTxHashes(decoratedAll);
+    const unmatchedOnchainRows = presentUnmatchedOnchainPayments({
+      payments: stellarWalletPaymentsQuery.payments.map((row) => ({
+        network: row.network,
+        payment: row.payment,
+      })),
+      elementTxHashes,
+      onOpenDetail: openOnchainTxDetail,
     });
+    const filteredOnchainRows = filterPresentedActivityRows(unmatchedOnchainRows, {
+      primary: s.txFilter,
+      query: s.txSearch,
+      currency: s.txCurrency,
+      dateRange: s.txDateRange,
+    });
+    // Paginated All page 1: include Horizon-only rows without changing order offsets.
+    // Pending/Failed pages stay ElementPay-only. Local filters merge into latest-50 mode.
+    const filteredTransactions = txUsesLatestFifty
+      ? mergePresentedActivityRows(latestFiftyMatches, filteredOnchainRows)
+      : s.txFilter === "all" && transactionsPageQuery.pageNumber === 1
+        ? mergePresentedActivityRows(pageTransactions, unmatchedOnchainRows)
+        : pageTransactions;
+    // Fetched by id (txDetailQuery), independent of the list above — see
+    // openTxDetail. Falls back to the list's cached copy while the detail
+    // fetch is in flight so the modal isn't blank on first open.
+    // Horizon-only wallet rows use `onchain:<hash>` and skip the API.
+    const listTxDetail =
+      decoratedAll.find((t) => t.id === s.selectedTxId) ??
+      filteredTransactions.find((t) => t.id === s.selectedTxId);
+    const apiTxDetail = txDetailQuery.data ? decorateTx(txDetailQuery.data) : null;
+    const txDetailBase = apiTxDetail ?? listTxDetail;
+    const txLiveStatus =
+      s.modal === "txDetail" &&
+      txDetailBase &&
+      selectedTxIsMerchantOrder &&
+      !txStatusQuery.isTerminal
+        ? {
+            label: txStatusQuery.isFrozen ? "Frozen — needs review" : "Tracking live — updates automatically",
+            isFetching: txStatusQuery.isFetching,
+          }
+        : null;
     const acctDetail = selectedDepositAccount
       ? (() => {
           const view = mapDepositAccountToCardView(selectedDepositAccount);
@@ -2661,7 +2688,7 @@ export default function DashboardApp(props: Props = {}) {
     : homeDisplayTotal.excluded.length
       ? `Across all wallets and accounts · excludes ${homeDisplayTotal.excluded.join(", ")}`
       : "Across all wallets and accounts";
-  const homeRecent = decoratedAll.slice(0, 4);
+  const homeRecent = mergePresentedActivityRows(decoratedAll, unmatchedOnchainRows, 4);
   const mainWalletBalance =
     usdcTotalLabel === "—" ? "—" : `${usdcTotalLabel} USDC`;
   const mainWalletSub = anyStableBalance
@@ -2733,11 +2760,16 @@ export default function DashboardApp(props: Props = {}) {
             ? stablecoinAccountsQuery.error.message
             : "Couldn't load currency accounts. Try again.")
       : undefined;
-  const walletsRecent = decoratedAll.slice(0, 5);
+  const walletsRecent = mergePresentedActivityRows(decoratedAll, unmatchedOnchainRows, 5);
   const elementAccountDetailRecent = recentActivityForFinancialAccount(decoratedAll, {
     financialAccountId: selectedStablecoinAccount?.id ?? null,
     walletAddress: selectedStablecoinAccount?.walletAddress ?? null,
   });
+  const selectedAccountOnchainPayments = selectedStablecoinAccount
+    ? stellarWalletPaymentsQuery.payments
+        .filter((row) => row.accountId === selectedStablecoinAccount.id)
+        .map((row) => row.payment)
+    : [];
   const accountDetailRecent =
     selectedStablecoinAccount &&
     Boolean(selectedStablecoinAccount.walletAddress) &&
@@ -2747,7 +2779,7 @@ export default function DashboardApp(props: Props = {}) {
     })
       ? stellarWalletPaymentsQuery.isFetched
         ? mergeWalletPaymentsWithElementActivity({
-            payments: stellarWalletPaymentsQuery.data ?? [],
+            payments: selectedAccountOnchainPayments,
             elementActivity: elementAccountDetailRecent,
             network: selectedStablecoinAccount.network,
             limit: 25,
@@ -2757,14 +2789,15 @@ export default function DashboardApp(props: Props = {}) {
       : elementAccountDetailRecent.slice(0, 5);
   const onchainSelectedHash = parseOnchainTxDetailId(s.selectedTxId);
   const onchainTxDetail =
-    onchainSelectedHash && selectedStablecoinAccount
+    onchainSelectedHash
       ? (() => {
-          const payment = (stellarWalletPaymentsQuery.data ?? []).find(
-            (row) => row.txHash.toLowerCase() === onchainSelectedHash.toLowerCase(),
+          const match = stellarWalletPaymentsQuery.payments.find(
+            (row) =>
+              row.payment.txHash.toLowerCase() === onchainSelectedHash.toLowerCase(),
           );
-          return payment
-            ? presentOnchainWalletPayment(payment, {
-                network: selectedStablecoinAccount.network,
+          return match
+            ? presentOnchainWalletPayment(match.payment, {
+                network: match.network,
               })
             : null;
         })()
@@ -2839,7 +2872,12 @@ export default function DashboardApp(props: Props = {}) {
     active: s.txFilter === filter.key,
   }));
   const txCurrencyOptions = Array.from(
-    new Set((transactionsQuery.data?.items ?? []).map((transaction) => transaction.currency.toUpperCase())),
+    new Set([
+      ...(transactionsQuery.data?.items ?? []).map((transaction) =>
+        transaction.currency.toUpperCase(),
+      ),
+      ...(unmatchedOnchainRows.length ? ["USDC"] : []),
+    ]),
   ).sort();
   const invoices = (invoicesQuery.data?.items ?? []).map((inv) => {
     const [l, c, soft] = STATUS_MAP[inv.status] || ["Draft", "var(--muted)", "var(--surface2)"];

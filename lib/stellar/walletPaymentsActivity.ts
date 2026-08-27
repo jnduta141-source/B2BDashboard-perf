@@ -169,3 +169,108 @@ export function mergeWalletPaymentsWithElementActivity(opts: {
     .sort((a, b) => createdAtMs(b.created_at) - createdAtMs(a.created_at))
     .slice(0, opts.limit ?? 25);
 }
+
+export type PresentedActivityRow = LinkedWalletActivityItem & {
+  direction?: string | null;
+  status?: string | null;
+  currency?: string | null;
+  amount_fiat?: string | null;
+  ref?: string | null;
+  openDetail?: () => void;
+};
+
+/** Collect ElementPay / presented `tx_hash` values used to hide duplicate Horizon rows. */
+export function collectPresentedTxHashes(
+  rows: Array<{ tx_hash?: string | null }>,
+): Set<string> {
+  const hashes = new Set<string>();
+  for (const row of rows) {
+    const hash = normalizeHash(row.tx_hash);
+    if (hash) hashes.add(hash);
+  }
+  return hashes;
+}
+
+/**
+ * Present Horizon-only payments that are not already covered by ElementPay rows.
+ * Dedupes by tx hash so Home / Transactions stay stable across multiple wallets.
+ */
+export function presentUnmatchedOnchainPayments(opts: {
+  payments: Array<{ network: string; payment: OnchainWalletPayment }>;
+  elementTxHashes: Set<string>;
+  onOpenDetail?: (payment: OnchainWalletPayment) => void;
+}): PresentedActivityRow[] {
+  const seen = new Set<string>();
+  const rows: PresentedActivityRow[] = [];
+  for (const entry of opts.payments) {
+    const hash = normalizeHash(entry.payment.txHash);
+    if (!hash || opts.elementTxHashes.has(hash) || seen.has(hash)) continue;
+    seen.add(hash);
+    const presented = presentOnchainWalletPayment(entry.payment, {
+      network: entry.network,
+    });
+    rows.push({
+      ...presented,
+      openDetail: opts.onOpenDetail
+        ? () => opts.onOpenDetail?.(entry.payment)
+        : undefined,
+    });
+  }
+  return rows;
+}
+
+/** Newest-first merge of ElementPay + on-chain presented rows. */
+export function mergePresentedActivityRows(
+  elementRows: PresentedActivityRow[],
+  onchainRows: PresentedActivityRow[],
+  limit?: number,
+): PresentedActivityRow[] {
+  const merged = [...elementRows, ...onchainRows].sort(
+    (a, b) => createdAtMs(b.created_at) - createdAtMs(a.created_at),
+  );
+  return typeof limit === "number" ? merged.slice(0, limit) : merged;
+}
+
+export type PresentedActivityFilter = {
+  primary?: "all" | "incoming" | "outgoing" | "processing" | "failed";
+  query?: string;
+  currency?: string;
+  dateRange?: "all" | "7d" | "30d";
+  now?: Date;
+};
+
+/** Apply the Transactions-screen local filters to presented on-chain rows. */
+export function filterPresentedActivityRows(
+  rows: PresentedActivityRow[],
+  criteria: PresentedActivityFilter,
+): PresentedActivityRow[] {
+  const query = criteria.query?.trim().toLowerCase() ?? "";
+  const currency = criteria.currency?.toUpperCase();
+  const dateRange = criteria.dateRange ?? "all";
+  const now = criteria.now ?? new Date();
+  const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : null;
+  const earliest = days === null ? null : now.getTime() - days * 24 * 60 * 60 * 1000;
+  const primary = criteria.primary ?? "all";
+
+  return rows.filter((row) => {
+    if (primary === "incoming" && row.direction !== "in") return false;
+    if (primary === "outgoing" && row.direction !== "out") return false;
+    if (
+      (primary === "processing" || primary === "failed") &&
+      row.status !== primary
+    ) {
+      return false;
+    }
+    if (currency && currency !== "ALL" && String(row.currency ?? "").toUpperCase() !== currency) {
+      return false;
+    }
+    if (earliest !== null) {
+      const created = createdAtMs(row.created_at);
+      if (!created || created < earliest) return false;
+    }
+    if (!query) return true;
+    return [row.id, row.tx_hash, row.amount, row.currency, row.client, row.type, row.ref]
+      .filter((value) => value != null)
+      .some((value) => String(value).toLowerCase().includes(query));
+  });
+}
