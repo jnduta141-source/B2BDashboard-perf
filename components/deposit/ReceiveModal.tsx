@@ -1,5 +1,12 @@
 "use client";
+import DepositAddressQr from "@/components/wallets/DepositAddressQr";
 import React from "react";
+import dynamic from "next/dynamic";
+import { isStellarUsdcRail } from "@/lib/stellar/network";
+
+const StellarWalletDeposit = dynamic(() => import("@/components/wallets/StellarWalletDeposit"), {
+  ssr: false,
+});
 
 export type ReceiveModalProps = {
   receiveGroups: any[];
@@ -11,6 +18,7 @@ export type ReceiveModalProps = {
   receiveAssets: any[];
   receiveNetworks: any[];
   receiveAssetCode: string;
+  receiveNetwork: string;
   receiveNetworkLabel: string;
   receiveAddress: string;
   copyReceiveAddress: () => void;
@@ -162,19 +170,38 @@ export default function ReceiveModal(p: ReceiveModalProps) {
           </div>
 
           {hasAddress ? (
-            <div className="ep-money-copy-row">
-              <span className="ep-money-copy-row__value" id="receive-address-value">
-                {p.receiveAddress}
-              </span>
-              <button
-                type="button"
-                className="ep-money-copy-btn"
-                onClick={p.copyReceiveAddress}
-                aria-describedby="receive-address-value"
-              >
-                <span aria-hidden>⧉</span>
-                {p.receiveAddressCopied ? "Copied" : "Copy"}
-              </button>
+            <div className="ep-money-stack ep-money-stack--tight">
+              <div className="ep-money-copy-row">
+                <span className="ep-money-copy-row__value" id="receive-address-value">
+                  {p.receiveAddress}
+                </span>
+                <button
+                  type="button"
+                  className="ep-money-copy-btn"
+                  onClick={p.copyReceiveAddress}
+                  aria-describedby="receive-address-value"
+                  aria-label={p.receiveAddressCopied ? "Address copied" : "Copy deposit address"}
+                >
+                  <span aria-hidden>⧉</span>
+                  {p.receiveAddressCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <DepositAddressQr
+                address={p.receiveAddress}
+                currency={p.receiveAssetCode}
+                network={p.receiveNetwork}
+                networkLabel={p.receiveNetworkLabel}
+              />
+              {isStellarUsdcRail({
+                network: p.receiveNetwork,
+                currency: p.receiveAssetCode,
+              }) ? (
+                <StellarWalletDeposit
+                  destination={p.receiveAddress}
+                  network={p.receiveNetwork}
+                  suggestedAmount=""
+                />
+              ) : null}
             </div>
           ) : (
             <div className="ep-money-empty-stack">

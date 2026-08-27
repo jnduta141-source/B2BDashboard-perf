@@ -3214,6 +3214,7 @@ export default function DashboardApp(props: Props = {}) {
   const receiveNetworkLabel =
     receiveNetworkOptions.find((n) => n.key === s.receiveNetwork)?.label ||
     formatNetworkLabel(s.receiveNetwork);
+  const receiveNetworkKey = s.receiveNetwork;
   const receiveAssetCode = s.receiveAsset.toUpperCase();
   const receivePickerDest = resolveStablecoinPickerDestination({
     accounts: resolvedStablecoinAccounts,
@@ -4034,6 +4035,7 @@ export default function DashboardApp(props: Props = {}) {
   receiveAssets={receiveAssets}
   receiveNetworks={receiveNetworks}
   receiveAssetCode={receiveAssetCode}
+  receiveNetwork={receiveNetworkKey}
   receiveNetworkLabel={receiveNetworkLabel}
   receiveAddress={receiveAddress}
   copyReceiveAddress={copyReceiveAddress}

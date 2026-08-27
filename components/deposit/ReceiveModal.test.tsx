@@ -4,6 +4,19 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import ReceiveModal, { type ReceiveModalProps } from "./ReceiveModal";
 
+vi.mock("next/dynamic", () => ({
+  default: () =>
+    function StellarWalletStub() {
+      return <div>Or send from a wallet</div>;
+    },
+}));
+
+vi.mock("@/components/wallets/DepositAddressQr", () => ({
+  default: ({ networkLabel }: { networkLabel: string }) => (
+    <div>Scan with a {networkLabel} wallet</div>
+  ),
+}));
+
 const stellarAddr = "GBXCJB6GSHU7DBYBQ7OQQRD4GWDNYRSNU5KSAVQBJ4LXAZIA23CXOKEE";
 
 function renderCrypto(overrides: Partial<ReceiveModalProps> = {}) {
@@ -22,6 +35,7 @@ function renderCrypto(overrides: Partial<ReceiveModalProps> = {}) {
         { label: "Stellar", select: onStellar, border: "", bg: "", color: "" },
       ]}
       receiveAssetCode="USDC"
+      receiveNetwork="stellar"
       receiveNetworkLabel="Stellar"
       receiveAddress={stellarAddr}
       copyReceiveAddress={vi.fn()}
@@ -42,6 +56,33 @@ describe("ReceiveModal stablecoin", () => {
     );
   });
 
+  it("shows QR scan and Stellar wallet connect for Stellar USDC", () => {
+    renderCrypto();
+    expect(screen.getByRole("button", { name: /Copy deposit address/i })).toBeInTheDocument();
+    expect(screen.getByText("Scan with a Stellar wallet")).toBeInTheDocument();
+    expect(screen.getByText("Or send from a wallet")).toBeInTheDocument();
+  });
+
+  it("shows QR but not Stellar wallet connect on Base", () => {
+    renderCrypto({
+      receiveNetwork: "base",
+      receiveNetworkLabel: "Base",
+      receiveAddress: "0xabc123",
+    });
+    expect(screen.getByText("Scan with a Base wallet")).toBeInTheDocument();
+    expect(screen.queryByText("Or send from a wallet")).not.toBeInTheDocument();
+  });
+
+  it("does not offer Stellar wallet connect for Stellar USDT", () => {
+    renderCrypto({
+      receiveAssetCode: "USDT",
+      receiveNetwork: "stellar",
+      receiveNetworkLabel: "Stellar",
+    });
+    expect(screen.getByText("Scan with a Stellar wallet")).toBeInTheDocument();
+    expect(screen.queryByText("Or send from a wallet")).not.toBeInTheDocument();
+  });
+
   it("fails closed with a clear message when no Stellar wallet is ready", () => {
     renderCrypto({
       receiveAddress: "—",
@@ -50,6 +91,8 @@ describe("ReceiveModal stablecoin", () => {
     });
     expect(screen.queryByText(stellarAddr)).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/No Stellar USDC wallet yet/i);
+    expect(screen.queryByText(/Scan with a/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Or send from a wallet")).not.toBeInTheDocument();
   });
 
   it("offers Create Account when no Stellar wallet exists", () => {
