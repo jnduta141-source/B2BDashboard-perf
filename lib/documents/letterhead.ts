@@ -6,43 +6,8 @@ export const MBOKA_LETTERHEAD = {
   product: "Mboka",
   tagline: "Business payments",
   email: "info@elementpay.net",
-  offices: [
-    {
-      region: "United States",
-      lines: [
-        "Elementpay Inc.",
-        "1007 N Orange St, 4th Floor",
-        "Ste 1382, Wilmington, DE 19801",
-      ],
-    },
-    {
-      region: "Kenya",
-      lines: [
-        "Elementpay Inc.",
-        "Fedha Plaza, Parklands Road",
-        "Nairobi, Kenya",
-      ],
-    },
-  ],
-  /** Compact hero lines for narrow / mobile previews. */
-  compactLines: ["info@elementpay.net", "Wilmington, DE · Nairobi, Kenya"],
-  /**
-   * Flat lines for desktop letterhead (region blocks separated by a blank line).
-   * Kept for callers that still map `lines` directly.
-   */
-  lines: [
-    "United States",
-    "Elementpay Inc.",
-    "1007 N Orange St, 4th Floor",
-    "Ste 1382, Wilmington, DE 19801",
-    "",
-    "Kenya",
-    "Elementpay Inc.",
-    "Fedha Plaza, Parklands Road",
-    "Nairobi, Kenya",
-    "",
-    "info@elementpay.net",
-  ],
+  /** Classic short letterhead — location + email only. */
+  lines: ["Nairobi, Kenya", "info@elementpay.net"],
 } as const;
 
 /** Full wordmark (mark + “Mboka”) — inline so saved/printed files never lose the asset. */

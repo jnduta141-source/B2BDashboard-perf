@@ -251,17 +251,6 @@ export function renderBrandedDocument(
   }).format(new Date());
 
   const addressHtml = MBOKA_LETTERHEAD.lines.map((line) => `<div>${esc(line)}</div>`).join("");
-  const compactAddrHtml = MBOKA_LETTERHEAD.compactLines
-    .map((line) => `<div>${esc(line)}</div>`)
-    .join("");
-  const officesFootHtml = MBOKA_LETTERHEAD.offices
-    .map(
-      (office) =>
-        `<div class="doc-foot__office"><strong>${esc(office.region)}</strong><br>${office.lines
-          .map((line) => esc(line))
-          .join("<br>")}</div>`,
-    )
-    .join("");
   const sharePayload = buildReceiptSharePayload(
     doc,
     options?.filenameStem || doc.fileTitle || "mboka-receipt",
@@ -355,21 +344,8 @@ export function renderBrandedDocument(
   }
   .letterhead__addr {
     text-align:right; font-size:12px; line-height:1.55; color:var(--muted);
-    min-width:200px; max-width:260px;
+    min-width:140px;
   }
-  .letterhead__addr div:empty { height:0.55em; }
-  .letterhead__addr--compact { display:none; }
-  .doc-foot__offices {
-    display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--line);
-    color:var(--muted); font-size:12px; line-height:1.55;
-  }
-  .doc-foot__offices-grid {
-    display:grid; gap:14px; margin-top:8px;
-  }
-  .doc-foot__office strong {
-    display:inline-block; margin-bottom:2px; color:var(--ink); font-weight:700;
-  }
-  .doc-foot__email { margin-top:10px; font-weight:600; color:var(--ink); }
   h1 {
     font-family:'Space Grotesk', system-ui, sans-serif; font-size:26px; font-weight:700;
     letter-spacing:-0.03em; margin:22px 0 8px;
@@ -424,9 +400,6 @@ export function renderBrandedDocument(
     }
     .hero { background:#fff; }
     .amount-panel { break-inside:avoid; }
-    .letterhead__addr--full { display:block !important; }
-    .letterhead__addr--compact { display:none !important; }
-    .doc-foot__offices { display:none !important; }
   }
   @media (max-width:560px) {
     body { padding:16px 12px 40px; }
@@ -449,11 +422,7 @@ export function renderBrandedDocument(
     .hero, .body, footer.doc-foot, .amount-panel { padding-left:18px; padding-right:18px; }
     .amount-panel { margin-left:16px; margin-right:16px; }
     .letterhead { flex-direction:column; gap:12px; }
-    .letterhead__addr--full { display:none; }
-    .letterhead__addr--compact {
-      display:block; text-align:left; min-width:0; max-width:none;
-    }
-    .doc-foot__offices { display:block; }
+    .letterhead__addr { text-align:left; }
     .amount { font-size:28px; }
   }
 </style></head>
@@ -478,8 +447,7 @@ export function renderBrandedDocument(
           ${MBOKA_LOGO_SVG}
           <p class="letterhead__tag">${esc(MBOKA_LETTERHEAD.tagline)}</p>
         </div>
-        <div class="letterhead__addr letterhead__addr--full">${addressHtml}</div>
-        <div class="letterhead__addr letterhead__addr--compact">${compactAddrHtml}</div>
+        <div class="letterhead__addr">${addressHtml}</div>
       </div>
       <h1>${esc(doc.heading)}</h1>
       ${doc.subheading ? `<p class="sub">${esc(doc.subheading)}</p>` : ""}
@@ -501,10 +469,6 @@ export function renderBrandedDocument(
       Generated ${esc(generated)} · ${esc(MBOKA_LETTERHEAD.product)} business payments.
       ${doc.footnote ? ` ${esc(doc.footnote)}` : ""}
       This is a computer-generated receipt and does not require a signature.
-      <div class="doc-foot__offices">
-        <div class="doc-foot__offices-grid">${officesFootHtml}</div>
-        <div class="doc-foot__email">${esc(MBOKA_LETTERHEAD.email)}</div>
-      </div>
     </footer>
   </main>
   ${shareScript(sharePayload)}

@@ -63,14 +63,10 @@ export function buildReceiptPdfBlob(
   doc.setTextColor(...MUTED);
   doc.text(MBOKA_LETTERHEAD.tagline.toUpperCase(), margin + 38, y + 26);
 
-  // Compact contact on the right
+  // Classic short contact on the right (location + email)
   doc.setFontSize(8);
   doc.setTextColor(...MUTED);
-  const contactLines = [
-    MBOKA_LETTERHEAD.email,
-    "Wilmington, DE · Nairobi, Kenya",
-  ];
-  contactLines.forEach((line, i) => {
+  MBOKA_LETTERHEAD.lines.forEach((line, i) => {
     doc.text(line, pageW - margin, y + 12 + i * 11, { align: "right" });
   });
   y += 48;
@@ -164,10 +160,6 @@ export function buildReceiptPdfBlob(
     receipt.footnote,
     `Generated ${new Date().toLocaleString()} · ${MBOKA_LETTERHEAD.product} business payments.`,
     "This is a computer-generated receipt and does not require a signature.",
-    "",
-    "United States — Elementpay Inc., 1007 N Orange St, 4th Floor, Ste 1382, Wilmington, DE 19801",
-    "Kenya — Elementpay Inc., Fedha Plaza, Parklands Road, Nairobi, Kenya",
-    MBOKA_LETTERHEAD.email,
   ].filter(Boolean) as string[];
   for (const line of foot) {
     const lines = wrapText(doc, line, contentW, 8);
