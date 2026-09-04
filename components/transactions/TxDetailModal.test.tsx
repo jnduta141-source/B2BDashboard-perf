@@ -129,5 +129,7 @@ describe("TxDetailModal receipt share sheet", () => {
     expect(screen.getByRole("menu")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /dismiss share menu/i })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: /whatsapp/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /download pdf/i })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /copy details/i })).not.toBeInTheDocument();
   });
 });

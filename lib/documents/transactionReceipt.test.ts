@@ -89,7 +89,9 @@ describe("buildTransactionReceipt", () => {
     expect(html).toContain("WhatsApp");
     expect(html).toContain("Messages / SMS");
     expect(html).toContain("Telegram");
-    expect(html).toContain("Copy details");
+    expect(html).toContain("Share PDF");
+    expect(html).not.toContain("Copy details");
+    expect(html).not.toContain("Save as file");
   });
 
   it("labels an inbound order as a deposit", () => {

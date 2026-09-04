@@ -2,15 +2,16 @@
 import MbokaMark from "@/components/brand/MbokaMark";
 import React, { useEffect, useId, useRef, useState } from "react";
 import StatusBadge from "@/components/ui/StatusBadge";
-import { openBrandedDocument, renderBrandedDocument } from "@/lib/documents/brandedDocument";
+import {
+  buildReceiptPdfBlob,
+  downloadPdfBlob,
+  shareReceiptPdf,
+} from "@/lib/documents/receiptPdf";
 import {
   RECEIPT_SHARE_METHODS,
   buildReceiptSharePayload,
   canUseDeviceShare,
-  copyShareText,
-  downloadShareHtml,
   emailShareUrl,
-  shareViaDevice,
   smsShareUrl,
   telegramShareUrl,
   whatsappShareUrl,
@@ -151,55 +152,49 @@ function ReceiptActions({ txDetail }: { txDetail: any }) {
   const doc = buildTransactionReceipt(txDetail);
   const filename = receiptFilename(txDetail);
   const payload = buildReceiptSharePayload(doc, filename);
-  const html = renderBrandedDocument(doc, { filenameStem: filename });
 
   async function runShare(id: ReceiptShareMethodId) {
-    if (id === "device") {
-      if (!canUseDeviceShare()) {
-        setToast("Device share isn’t available — try WhatsApp or Copy");
-        return;
-      }
-      const ok = await shareViaDevice(payload);
-      if (!ok) setToast("Couldn’t open device share");
-      setOpen(false);
-      return;
-    }
-    if (id === "whatsapp") {
-      window.open(whatsappShareUrl(payload.text), "_blank", "noopener,noreferrer");
-      setOpen(false);
-      return;
-    }
-    if (id === "email") {
-      window.location.href = emailShareUrl(payload.title, payload.text);
-      setOpen(false);
-      return;
-    }
-    if (id === "sms") {
-      window.location.href = smsShareUrl(payload.text);
-      setOpen(false);
-      return;
-    }
-    if (id === "telegram") {
-      window.open(telegramShareUrl(payload.text), "_blank", "noopener,noreferrer");
-      setOpen(false);
-      return;
-    }
-    if (id === "copy") {
-      const ok = await copyShareText(payload.text);
-      setToast(ok ? "Receipt copied" : "Couldn’t copy");
-      setOpen(false);
-      return;
-    }
+    const pdf = buildReceiptPdfBlob(doc, filename);
+
     if (id === "pdf") {
-      openBrandedDocument(doc, filename);
+      downloadPdfBlob(pdf.blob, pdf.filename);
+      setToast("PDF saved");
       setOpen(false);
       return;
     }
-    if (id === "html") {
-      downloadShareHtml(html, payload.filename);
-      setToast("Receipt file saved");
-      setOpen(false);
+
+    const result = await shareReceiptPdf(pdf);
+
+    if (result === "failed") {
+      setToast("Couldn’t share the PDF");
+      return;
     }
+    if (result === "aborted") {
+      setOpen(false);
+      return;
+    }
+
+    // Deep links can't attach files — after PDF share/download, open the
+    // channel with a short caption so the user can attach the saved PDF.
+    if (result === "downloaded") {
+      if (id === "whatsapp") {
+        window.open(whatsappShareUrl(payload.text), "_blank", "noopener,noreferrer");
+        setToast("PDF saved — attach it in WhatsApp");
+      } else if (id === "email") {
+        window.location.href = emailShareUrl(payload.title, payload.text);
+        setToast("PDF saved — attach it to your email");
+      } else if (id === "sms") {
+        window.location.href = smsShareUrl(payload.text);
+        setToast("PDF saved — attach it in Messages if supported");
+      } else if (id === "telegram") {
+        window.open(telegramShareUrl(payload.text), "_blank", "noopener,noreferrer");
+        setToast("PDF saved — attach it in Telegram");
+      } else {
+        setToast("PDF saved");
+      }
+    }
+
+    setOpen(false);
   }
 
   const methods = RECEIPT_SHARE_METHODS.filter(
@@ -248,7 +243,11 @@ function ReceiptActions({ txDetail }: { txDetail: any }) {
       <button
         type="button"
         className="ep-btn-primary ep-txn-detail__receipt"
-        onClick={() => openBrandedDocument(doc, filename)}
+        onClick={() => {
+          const pdf = buildReceiptPdfBlob(doc, filename);
+          downloadPdfBlob(pdf.blob, pdf.filename);
+          setToast("PDF saved");
+        }}
       >
         Download PDF
       </button>

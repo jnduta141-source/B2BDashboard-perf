@@ -1,8 +1,9 @@
 /**
  * Share targets for settled payment receipts.
  *
- * Receipts are shared as plain text (plus optional HTML/PDF download) —
- * there is no public receipt URL yet.
+ * Receipts are shared as a PDF file (Web Share Level 2) with download fallback.
+ * Channel deep links cannot attach files, so named channels also share/download
+ * the PDF rather than pasting a text summary.
  */
 
 export type ReceiptShareDoc = {
@@ -18,8 +19,11 @@ export type ReceiptShareDoc = {
 
 export type ReceiptSharePayload = {
   title: string;
+  /** Short caption used only when a channel opens without a file attach API. */
   text: string;
   filename: string;
+  /** Structured fields for PDF builders (app + preview window). */
+  doc: ReceiptShareDoc;
 };
 
 export type ReceiptShareMethodId =
@@ -28,9 +32,7 @@ export type ReceiptShareMethodId =
   | "email"
   | "sms"
   | "telegram"
-  | "copy"
-  | "pdf"
-  | "html";
+  | "pdf";
 
 export type ReceiptShareMethod = {
   id: ReceiptShareMethodId;
@@ -43,82 +45,59 @@ export type ReceiptShareMethod = {
 export const RECEIPT_SHARE_METHODS: ReceiptShareMethod[] = [
   {
     id: "device",
-    label: "Share via device",
-    hint: "System share sheet (apps, AirDrop, Nearby)",
+    label: "Share PDF",
+    hint: "Share the receipt PDF via the system sheet",
   },
   {
     id: "whatsapp",
     label: "WhatsApp",
-    hint: "Open a chat with the receipt summary",
+    hint: "Share the receipt PDF",
   },
   {
     id: "email",
     label: "Email",
-    hint: "Compose a message with the receipt",
+    hint: "Share the receipt PDF",
   },
   {
     id: "sms",
     label: "Messages / SMS",
-    hint: "Send the summary as a text",
+    hint: "Share the receipt PDF",
   },
   {
     id: "telegram",
     label: "Telegram",
-    hint: "Share the summary in Telegram",
-  },
-  {
-    id: "copy",
-    label: "Copy details",
-    hint: "Copy the receipt text to clipboard",
+    hint: "Share the receipt PDF",
   },
   {
     id: "pdf",
     label: "Download PDF",
-    hint: "Print → Save as PDF",
-  },
-  {
-    id: "html",
-    label: "Save as file",
-    hint: "Download the receipt as HTML",
+    hint: "Save the receipt as a PDF file",
   },
 ];
 
-/** Flatten a branded document into a paste-friendly receipt summary. */
+/** Short message kept beside the PDF when a target still needs body text. */
 export function buildReceiptShareText(doc: ReceiptShareDoc): string {
-  const lines: string[] = [
+  const bits = [
     doc.heading,
     doc.statusBadge ? `Status: ${doc.statusBadge}` : "",
     doc.amountCaption && doc.amount ? `${doc.amountCaption}: ${doc.amount}` : doc.amount || "",
-    doc.party || "",
   ].filter(Boolean);
-
-  for (const section of doc.sections) {
-    lines.push("");
-    lines.push(section.title);
-    for (const row of section.rows) {
-      lines.push(`${row.label}: ${row.value}`);
-    }
-  }
-
-  if (doc.footnote) {
-    lines.push("");
-    lines.push(doc.footnote);
-  }
-
-  lines.push("");
-  lines.push("— Mboka business payments");
-  return lines.join("\n");
+  bits.push("");
+  bits.push("Receipt PDF attached / downloaded.");
+  bits.push("— Mboka business payments");
+  return bits.join("\n");
 }
 
 export function buildReceiptSharePayload(
   doc: ReceiptShareDoc,
   filenameStem: string,
 ): ReceiptSharePayload {
-  const stem = filenameStem.replace(/\.pdf$/i, "").trim() || "mboka-receipt";
+  const stem = filenameStem.replace(/\.(pdf|html)$/i, "").trim() || "mboka-receipt";
   return {
     title: doc.fileTitle || doc.heading,
     text: buildReceiptShareText(doc),
-    filename: stem.endsWith(".html") ? stem : `${stem}.html`,
+    filename: `${stem}.pdf`,
+    doc,
   };
 }
 
@@ -139,36 +118,13 @@ export function telegramShareUrl(text: string): string {
   return `https://t.me/share/url?url=${encodeURIComponent("https://mboka.africa")}&text=${encodeURIComponent(text)}`;
 }
 
-export async function copyShareText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    /* fall through */
-  }
-  try {
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.left = "-9999px";
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand("copy");
-    ta.remove();
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 export function canUseDeviceShare(): boolean {
   return typeof navigator !== "undefined" && typeof navigator.share === "function";
 }
 
 export async function shareViaDevice(payload: ReceiptSharePayload): Promise<boolean> {
+  // Prefer PDF file share — implemented in receiptPdf.shareReceiptPdf.
+  // Kept for callers that only have text; prefer shareReceiptPdf at call sites.
   if (!canUseDeviceShare()) return false;
   try {
     await navigator.share({
@@ -177,20 +133,7 @@ export async function shareViaDevice(payload: ReceiptSharePayload): Promise<bool
     });
     return true;
   } catch (err) {
-    // User dismissed the sheet — not a failure worth surfacing.
     if (err instanceof DOMException && err.name === "AbortError") return true;
     return false;
   }
-}
-
-export function downloadShareHtml(html: string, filename: string): void {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename.endsWith(".html") ? filename : `${filename}.html`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }

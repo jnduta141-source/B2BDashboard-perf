@@ -2,12 +2,15 @@
  * Printable Mboka documents — payment receipts and bank letters.
  *
  * These leave the product: a counterparty sees them, so they carry the brand
- * rather than the dashboard chrome. Documents are standalone HTML that the
- * browser prints to PDF (no PDF dependency). Colour: indigo #3B2ED3 · ink
- * #131126 · bone #F6F4EF.
+ * rather than the dashboard chrome. Colour: indigo #3B2ED3 · ink #131126 ·
+ * bone #F6F4EF. Share/download paths use a real PDF blob (jspdf).
  */
 
 import { MBOKA_LETTERHEAD, MBOKA_LOGO_SVG } from "@/lib/documents/letterhead";
+import {
+  buildReceiptPdfBlob,
+  downloadPdfBlob,
+} from "@/lib/documents/receiptPdf";
 import {
   RECEIPT_SHARE_METHODS,
   buildReceiptSharePayload,
@@ -109,65 +112,70 @@ function shareScript(payload: ReceiptSharePayload): string {
 
   function encode(s) { return encodeURIComponent(s || ""); }
 
-  function copyText(text) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return false; });
-    }
-    return new Promise(function (resolve) {
-      try {
-        var ta = document.createElement("textarea");
-        ta.value = text;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "fixed";
-        ta.style.left = "-9999px";
-        document.body.appendChild(ta);
-        ta.select();
-        var ok = document.execCommand("copy");
-        ta.remove();
-        resolve(ok);
-      } catch (e) { resolve(false); }
-    });
+  function pdfHandle() {
+    return window.__RECEIPT_PDF__ || null;
   }
 
-  function downloadHtml() {
-    var blob = new Blob([document.documentElement.outerHTML], { type: "text/html;charset=utf-8" });
-    var url = URL.createObjectURL(blob);
+  function downloadPdf() {
+    var pdf = pdfHandle();
+    if (!pdf || !pdf.blob) {
+      window.print();
+      return false;
+    }
+    var url = URL.createObjectURL(pdf.blob);
     var a = document.createElement("a");
     a.href = url;
-    a.download = SHARE.filename || "mboka-receipt.html";
+    a.download = pdf.filename || SHARE.filename || "mboka-receipt.pdf";
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    return true;
   }
 
-  function runShare(id) {
+  function canSharePdf(file) {
+    try {
+      return !!(navigator.share && navigator.canShare && navigator.canShare({ files: [file] }));
+    } catch (e) { return false; }
+  }
+
+  function sharePdfFile() {
+    var pdf = pdfHandle();
+    if (!pdf || !pdf.blob) {
+      return Promise.resolve(downloadPdf() ? "downloaded" : "failed");
+    }
+    var file = new File([pdf.blob], pdf.filename || SHARE.filename || "mboka-receipt.pdf", {
+      type: "application/pdf"
+    });
+    if (canSharePdf(file)) {
+      return navigator.share({ files: [file], title: pdf.title || SHARE.title || "Mboka receipt" })
+        .then(function () { return "shared"; })
+        .catch(function (err) {
+          if (err && err.name === "AbortError") return "aborted";
+          downloadPdf();
+          return "downloaded";
+        });
+    }
+    downloadPdf();
+    return Promise.resolve("downloaded");
+  }
+
+  function openChannel(id) {
     var text = SHARE.text || "";
     var title = SHARE.title || "Mboka receipt";
-    if (id === "device") {
-      if (!navigator.share) {
-        showToast("Device share isn’t available here — try WhatsApp or Copy");
-        return;
-      }
-      navigator.share({ title: title, text: text }).then(closeMenu).catch(function (err) {
-        if (err && err.name === "AbortError") { closeMenu(); return; }
-        showToast("Couldn’t open device share");
-      });
-      return;
-    }
     if (id === "whatsapp") {
       window.open("https://wa.me/?text=" + encode(text), "_blank", "noopener,noreferrer");
-      closeMenu();
+      showToast("PDF saved — attach it in WhatsApp");
       return;
     }
     if (id === "email") {
       window.location.href = "mailto:?subject=" + encode(title) + "&body=" + encode(text);
-      closeMenu();
+      showToast("PDF saved — attach it to your email");
       return;
     }
     if (id === "sms") {
       window.location.href = "sms:?&body=" + encode(text);
-      closeMenu();
+      showToast("PDF saved — attach it in Messages if supported");
       return;
     }
     if (id === "telegram") {
@@ -176,26 +184,39 @@ function shareScript(payload: ReceiptSharePayload): string {
         "_blank",
         "noopener,noreferrer"
       );
-      closeMenu();
-      return;
+      showToast("PDF saved — attach it in Telegram");
     }
-    if (id === "copy") {
-      copyText(text).then(function (ok) {
-        showToast(ok ? "Receipt copied" : "Couldn’t copy — select the text manually");
-        closeMenu();
-      });
-      return;
-    }
+  }
+
+  function runShare(id) {
     if (id === "pdf") {
+      downloadPdf();
+      showToast("PDF saved");
       closeMenu();
-      window.print();
       return;
     }
-    if (id === "html") {
-      downloadHtml();
-      showToast("Receipt file saved");
+    sharePdfFile().then(function (result) {
+      if (result === "failed") {
+        showToast("Couldn’t share the PDF");
+        return;
+      }
+      if (result === "aborted") {
+        closeMenu();
+        return;
+      }
+      if (result === "downloaded" && id !== "device") {
+        openChannel(id);
+      }
       closeMenu();
-    }
+    });
+  }
+
+  var downloadBtn = document.getElementById("download-pdf");
+  if (downloadBtn) {
+    downloadBtn.addEventListener("click", function () {
+      downloadPdf();
+      showToast("PDF saved");
+    });
   }
 
   if (toggle && menu) {
@@ -446,7 +467,7 @@ export function renderBrandedDocument(
         ${shareMenuItemsHtml()}
       </div>
     </div>
-    <button type="button" class="toolbar__primary" onclick="window.print()">Download PDF</button>
+    <button type="button" class="toolbar__primary" id="download-pdf">Download PDF</button>
   </div>
   <button type="button" class="share-backdrop" id="share-backdrop" hidden aria-label="Dismiss share menu"></button>
   <div class="share-toast" id="share-toast" hidden role="status" aria-live="polite"></div>
@@ -491,34 +512,29 @@ export function renderBrandedDocument(
 }
 
 /**
- * Open the document in a new tab. "Download PDF" uses the browser print
- * dialog (Save as PDF) — no PDF library, and the user gets a real PDF.
+ * Open the branded HTML preview in a new tab and attach a real PDF blob so
+ * Share / Download PDF use the file instead of print-to-PDF text fallbacks.
  * Falls back to downloading the HTML when popups are blocked.
  */
 export function openBrandedDocument(doc: BrandedDocument, filenameStem: string): void {
   const html = renderBrandedDocument(doc, { filenameStem });
+  const pdf = buildReceiptPdfBlob(doc, filenameStem);
   const win = window.open("", "_blank");
   if (win) {
     win.opener = null;
+    (win as Window & { __RECEIPT_PDF__?: { blob: Blob; filename: string; title: string } }).__RECEIPT_PDF__ = {
+      blob: pdf.blob,
+      filename: pdf.filename,
+      title: pdf.title,
+    };
     win.document.write(html);
     win.document.close();
-    // Hint the print dialog's default filename where browsers honour <title>.
     try {
-      win.document.title = filenameStem.endsWith(".pdf")
-        ? filenameStem
-        : `${filenameStem}.pdf`;
+      win.document.title = pdf.filename;
     } catch {
       /* cross-origin / closed — ignore */
     }
     return;
   }
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${filenameStem}.html`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  downloadPdfBlob(pdf.blob, pdf.filename);
 }
