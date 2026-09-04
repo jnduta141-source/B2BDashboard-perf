@@ -79,6 +79,8 @@ describe("buildTransactionReceipt", () => {
     expect(html).toContain("Wilmington, DE 19801");
     expect(html).toContain("info@elementpay.net");
     expect(html).not.toContain("support@mboka.africa");
+    expect(html).toContain("letterhead__addr--compact");
+    expect(html).toContain("share-backdrop");
     expect(html).toContain('aria-label="Mboka"');
     expect(html).toContain("Recipient");
     expect(html).toContain("+254712345678");

@@ -208,6 +208,14 @@ function ReceiptActions({ txDetail }: { txDetail: any }) {
 
   return (
     <div className="ep-txn-detail__actions" ref={rootRef}>
+      {open ? (
+        <button
+          type="button"
+          className="ep-txn-detail__share-backdrop"
+          aria-label="Dismiss share menu"
+          onClick={() => setOpen(false)}
+        />
+      ) : null}
       <div className="ep-txn-detail__share-wrap">
         <button
           type="button"
@@ -221,6 +229,7 @@ function ReceiptActions({ txDetail }: { txDetail: any }) {
         </button>
         {open ? (
           <div className="ep-txn-detail__share-menu" id={menuId} role="menu">
+            <div className="ep-txn-detail__share-sheet-label">Share receipt</div>
             {methods.map((m) => (
               <button
                 key={m.id}

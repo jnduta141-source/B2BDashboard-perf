@@ -81,6 +81,7 @@ function shareScript(payload: ReceiptSharePayload): string {
   var menu = document.getElementById("share-menu");
   var toggle = document.getElementById("share-toggle");
   var toast = document.getElementById("share-toast");
+  var backdrop = document.getElementById("share-backdrop");
 
   function showToast(msg) {
     if (!toast) return;
@@ -94,12 +95,16 @@ function shareScript(payload: ReceiptSharePayload): string {
     if (!menu || !toggle) return;
     menu.hidden = true;
     toggle.setAttribute("aria-expanded", "false");
+    if (backdrop) backdrop.hidden = true;
+    document.body.classList.remove("share-open");
   }
 
   function openMenu() {
     if (!menu || !toggle) return;
     menu.hidden = false;
     toggle.setAttribute("aria-expanded", "true");
+    if (backdrop) backdrop.hidden = false;
+    document.body.classList.add("share-open");
   }
 
   function encode(s) { return encodeURIComponent(s || ""); }
@@ -203,6 +208,9 @@ function shareScript(payload: ReceiptSharePayload): string {
       if (!btn) return;
       runShare(btn.getAttribute("data-share"));
     });
+    if (backdrop) {
+      backdrop.addEventListener("click", function () { closeMenu(); });
+    }
     document.addEventListener("click", function () { closeMenu(); });
     document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") closeMenu();
@@ -222,6 +230,17 @@ export function renderBrandedDocument(
   }).format(new Date());
 
   const addressHtml = MBOKA_LETTERHEAD.lines.map((line) => `<div>${esc(line)}</div>`).join("");
+  const compactAddrHtml = MBOKA_LETTERHEAD.compactLines
+    .map((line) => `<div>${esc(line)}</div>`)
+    .join("");
+  const officesFootHtml = MBOKA_LETTERHEAD.offices
+    .map(
+      (office) =>
+        `<div class="doc-foot__office"><strong>${esc(office.region)}</strong><br>${office.lines
+          .map((line) => esc(line))
+          .join("<br>")}</div>`,
+    )
+    .join("");
   const sharePayload = buildReceiptSharePayload(
     doc,
     options?.filenameStem || doc.fileTitle || "mboka-receipt",
@@ -255,6 +274,8 @@ export function renderBrandedDocument(
     position:sticky; top:0; z-index:2; max-width:720px; margin:0 auto 16px;
     display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; align-items:center;
     padding:10px 0;
+    background:linear-gradient(180deg, rgba(239,235,251,0.96) 0%, rgba(246,244,239,0.92) 100%);
+    backdrop-filter:blur(8px);
   }
   .toolbar button, .toolbar__share > button {
     appearance:none; border:0; cursor:pointer; font:inherit; font-weight:600;
@@ -264,10 +285,20 @@ export function renderBrandedDocument(
   .toolbar__primary:hover { filter:brightness(1.05); }
   .toolbar__ghost { background:#fff; color:var(--ink); border:1px solid var(--line) !important; }
   .toolbar__share { position:relative; }
+  .share-backdrop {
+    display:none; position:fixed; inset:0; z-index:8;
+    background:rgba(19,17,38,0.38); border:0; padding:0; margin:0; cursor:pointer;
+  }
   .share-menu {
     position:absolute; right:0; top:calc(100% + 8px); width:min(320px, 86vw);
     background:#fff; border:1px solid var(--line); border-radius:16px;
-    box-shadow:0 16px 40px rgba(19,17,38,0.14); padding:6px; z-index:5;
+    box-shadow:0 16px 40px rgba(19,17,38,0.18); padding:6px; z-index:9;
+    max-height:min(70vh, 420px); overflow:auto;
+  }
+  .share-menu__title {
+    display:none; padding:8px 12px 6px; font-size:12px; font-weight:700;
+    letter-spacing:0.06em; text-transform:uppercase; color:var(--muted2);
+    font-family:'Space Grotesk', system-ui, sans-serif;
   }
   .share-item {
     width:100%; display:flex; flex-direction:column; align-items:flex-start; gap:2px;
@@ -306,6 +337,18 @@ export function renderBrandedDocument(
     min-width:200px; max-width:260px;
   }
   .letterhead__addr div:empty { height:0.55em; }
+  .letterhead__addr--compact { display:none; }
+  .doc-foot__offices {
+    display:none; margin-top:14px; padding-top:14px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:12px; line-height:1.55;
+  }
+  .doc-foot__offices-grid {
+    display:grid; gap:14px; margin-top:8px;
+  }
+  .doc-foot__office strong {
+    display:inline-block; margin-bottom:2px; color:var(--ink); font-weight:700;
+  }
+  .doc-foot__email { margin-top:10px; font-weight:600; color:var(--ink); }
   h1 {
     font-family:'Space Grotesk', system-ui, sans-serif; font-size:26px; font-weight:700;
     letter-spacing:-0.03em; margin:22px 0 8px;
@@ -354,18 +397,42 @@ export function renderBrandedDocument(
   @media print {
     @page { margin:14mm; }
     body { background:#fff; padding:0; }
-    .toolbar, .share-toast { display:none !important; }
+    .toolbar, .share-toast, .share-backdrop { display:none !important; }
     .sheet {
       border:none; border-radius:0; box-shadow:none; max-width:none;
     }
     .hero { background:#fff; }
     .amount-panel { break-inside:avoid; }
+    .letterhead__addr--full { display:block !important; }
+    .letterhead__addr--compact { display:none !important; }
+    .doc-foot__offices { display:none !important; }
   }
   @media (max-width:560px) {
-    .hero, .body, footer.doc-foot, .amount-panel { padding-left:20px; padding-right:20px; }
-    .amount-panel { margin-left:20px; margin-right:20px; }
-    .letterhead { flex-direction:column; }
-    .letterhead__addr { text-align:left; }
+    body { padding:16px 12px 40px; }
+    .toolbar {
+      justify-content:stretch; gap:8px; margin-bottom:12px;
+      padding:8px 0; background:rgba(246,244,239,0.97);
+    }
+    .toolbar button, .toolbar__share { flex:1 1 auto; }
+    .toolbar__share > button, .toolbar__ghost, .toolbar__primary { width:100%; }
+    .toolbar__share { position:static; }
+    body.share-open .share-backdrop { display:block; }
+    .share-menu {
+      position:fixed; left:12px; right:12px; top:auto;
+      bottom:max(12px, env(safe-area-inset-bottom, 0px));
+      width:auto; max-height:min(70vh, 440px);
+      border-radius:20px; box-shadow:0 22px 56px rgba(19,17,38,0.28);
+      z-index:10; padding:8px 6px 10px;
+    }
+    .share-menu__title { display:block; }
+    .hero, .body, footer.doc-foot, .amount-panel { padding-left:18px; padding-right:18px; }
+    .amount-panel { margin-left:16px; margin-right:16px; }
+    .letterhead { flex-direction:column; gap:12px; }
+    .letterhead__addr--full { display:none; }
+    .letterhead__addr--compact {
+      display:block; text-align:left; min-width:0; max-width:none;
+    }
+    .doc-foot__offices { display:block; }
     .amount { font-size:28px; }
   }
 </style></head>
@@ -375,11 +442,13 @@ export function renderBrandedDocument(
     <div class="toolbar__share">
       <button type="button" class="toolbar__ghost" id="share-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="share-menu">Share</button>
       <div class="share-menu" id="share-menu" role="menu" hidden>
+        <div class="share-menu__title">Share receipt</div>
         ${shareMenuItemsHtml()}
       </div>
     </div>
     <button type="button" class="toolbar__primary" onclick="window.print()">Download PDF</button>
   </div>
+  <button type="button" class="share-backdrop" id="share-backdrop" hidden aria-label="Dismiss share menu"></button>
   <div class="share-toast" id="share-toast" hidden role="status" aria-live="polite"></div>
   <main class="sheet">
     <header class="hero">
@@ -388,7 +457,8 @@ export function renderBrandedDocument(
           ${MBOKA_LOGO_SVG}
           <p class="letterhead__tag">${esc(MBOKA_LETTERHEAD.tagline)}</p>
         </div>
-        <div class="letterhead__addr">${addressHtml}</div>
+        <div class="letterhead__addr letterhead__addr--full">${addressHtml}</div>
+        <div class="letterhead__addr letterhead__addr--compact">${compactAddrHtml}</div>
       </div>
       <h1>${esc(doc.heading)}</h1>
       ${doc.subheading ? `<p class="sub">${esc(doc.subheading)}</p>` : ""}
@@ -410,6 +480,10 @@ export function renderBrandedDocument(
       Generated ${esc(generated)} · ${esc(MBOKA_LETTERHEAD.product)} business payments.
       ${doc.footnote ? ` ${esc(doc.footnote)}` : ""}
       This is a computer-generated receipt and does not require a signature.
+      <div class="doc-foot__offices">
+        <div class="doc-foot__offices-grid">${officesFootHtml}</div>
+        <div class="doc-foot__email">${esc(MBOKA_LETTERHEAD.email)}</div>
+      </div>
     </footer>
   </main>
   ${shareScript(sharePayload)}

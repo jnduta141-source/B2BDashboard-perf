@@ -102,3 +102,32 @@ describe("TxDetailModal Stellar inbound rows", () => {
     expect(screen.queryByRole("button", { name: /download pdf/i })).not.toBeInTheDocument();
   });
 });
+
+describe("TxDetailModal receipt share sheet", () => {
+  it("opens an opaque share sheet with a dismiss backdrop", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    render(
+      <TxDetailModal
+        txDetail={stellarDepositDetail({
+          type: "Deposit",
+          client: "Deposit · KES",
+          amount: "+300.00 KES",
+          currency: "KES",
+          amount_fiat: "300.00",
+          hideReceipt: false,
+          provider: "yellowcard",
+          networkName: "M-PESA",
+          partyName: "Elementpay",
+          accountNumber: "+254720752314",
+          accountKind: "phone",
+          psp_transaction_id: "ws_CO_test",
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /share receipt/i }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /dismiss share menu/i })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /whatsapp/i })).toBeInTheDocument();
+  });
+});
