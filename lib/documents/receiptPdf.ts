@@ -1,9 +1,6 @@
 /**
- * Client-side payment receipt PDF — M-PESA-inspired layout with Mboka branding.
- *
- * Structure mirrors familiar mobile-money receipts (hero, amount card + detail
- * column, barcode band, contact footer) while using Mboka indigo / ink colours
- * and Elementpay contact lines — never partner brands.
+ * Client-side payment receipt PDF — shared via Web Share / download.
+ * Layout mirrors the branded HTML receipt without requiring print.
  */
 
 import { jsPDF } from "jspdf";
@@ -11,11 +8,10 @@ import { MBOKA_LETTERHEAD } from "@/lib/documents/letterhead";
 import type { ReceiptShareDoc } from "@/lib/documents/receiptShare";
 
 const INDIGO: [number, number, number] = [59, 46, 211];
-const INDIGO_DEEP: [number, number, number] = [45, 35, 170];
 const INK: [number, number, number] = [19, 17, 38];
 const MUTED: [number, number, number] = [76, 74, 102];
 const LINE: [number, number, number] = [220, 218, 230];
-const WHITE: [number, number, number] = [255, 255, 255];
+const TINT: [number, number, number] = [238, 237, 251];
 
 function pdfFilename(stem: string): string {
   const base = stem.replace(/\.(pdf|html)$/i, "").trim() || "mboka-receipt";
@@ -29,75 +25,7 @@ function wrapText(
   fontSize: number,
 ): string[] {
   doc.setFontSize(fontSize);
-  return doc.splitTextToSize(String(text || ""), maxWidth) as string[];
-}
-
-function flattenRows(receipt: ReceiptShareDoc): { label: string; value: string }[] {
-  const rows: { label: string; value: string }[] = [];
-  for (const section of receipt.sections) {
-    for (const row of section.rows) {
-      if (row.value?.trim()) rows.push({ label: row.label, value: row.value.trim() });
-    }
-  }
-  return rows;
-}
-
-function findRow(
-  rows: { label: string; value: string }[],
-  ...needles: string[]
-): string | null {
-  for (const needle of needles) {
-    const hit = rows.find((r) => r.label.toLowerCase().includes(needle.toLowerCase()));
-    if (hit) return hit.value;
-  }
-  return null;
-}
-
-function greetingName(receipt: ReceiptShareDoc, rows: { label: string; value: string }[]): string {
-  const party =
-    findRow(rows, "recipient", "payer", "counterparty") ||
-    (receipt.party || "").split("·")[0]?.trim() ||
-    "";
-  if (!party) return "there";
-  // First token only — "Jane Wanjiku" → "Jane"
-  const first = party.split(/\s+/)[0]?.replace(/[^a-zA-Z'-]/g, "") || "";
-  return first || "there";
-}
-
-function amountBoxLabel(caption?: string): string {
-  const c = (caption || "").toLowerCase();
-  if (c.includes("received")) return "Total Amount Received:";
-  if (c.includes("sent")) return "Total Amount Paid:";
-  return "Total Amount:";
-}
-
-/** Abstract Mboka mark — interlocking squares, not a partner/rail icon. */
-function drawHeroMark(doc: jsPDF, cx: number, cy: number, size: number): void {
-  const s = size;
-  doc.setFillColor(...INDIGO);
-  doc.roundedRect(cx - s * 0.55, cy - s * 0.55, s * 0.72, s * 0.72, 10, 10, "F");
-  doc.setFillColor(124, 111, 255);
-  doc.roundedRect(cx - s * 0.12, cy - s * 0.12, s * 0.72, s * 0.72, 10, 10, "F");
-  doc.setFillColor(...WHITE);
-  doc.roundedRect(cx - s * 0.22, cy - s * 0.22, s * 0.38, s * 0.38, 6, 6, "F");
-  doc.setFillColor(...INDIGO);
-  doc.roundedRect(cx - s * 0.12, cy - s * 0.12, s * 0.24, s * 0.24, 4, 4, "F");
-}
-
-/** Decorative barcode-style band (visual separator, not a real barcode). */
-function drawBarcodeBand(doc: jsPDF, x: number, y: number, width: number, height: number): void {
-  doc.setFillColor(...INK);
-  let cursor = x;
-  const end = x + width;
-  let i = 0;
-  while (cursor < end) {
-    const barW = i % 5 === 0 ? 2.4 : i % 3 === 0 ? 1.6 : 1.0;
-    const gap = i % 4 === 0 ? 2.2 : 1.4;
-    if (cursor + barW > end) break;
-    doc.rect(cursor, y, barW, height, "F");
-    cursor += barW + gap;
-    i += 1;
-  }
+  return doc.splitTextToSize(text || "", maxWidth) as string[];
 }
 
 /** Build a downloadable/shareable receipt PDF from the branded document model. */
@@ -108,162 +36,136 @@ export function buildReceiptPdfBlob(
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 40;
+  const margin = 48;
   const contentW = pageW - margin * 2;
   let y = margin;
 
-  const rows = flattenRows(receipt);
-  const phone =
-    findRow(rows, "m-pesa number", "mobile number", "phone") ||
-    findRow(rows, "bank account", "destination account", "source account");
-  const paidTo = findRow(rows, "recipient", "payer", "counterparty");
-  const txnNo =
-    findRow(rows, "m-pesa reference", "payment reference", "bank reference", "mobile money reference") ||
-    findRow(rows, "receipt number");
-  const paymentType = findRow(rows, "payment method");
-  const date =
-    findRow(rows, "date settled", "date initiated") ||
-    new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-  const currency = findRow(rows, "currency");
+  const ensureSpace = (needed: number) => {
+    if (y + needed <= pageH - margin) return;
+    doc.addPage();
+    y = margin;
+  };
 
-  // Detail column prefers a compact M-PESA-like set, then remaining rows.
-  const preferredLabels = [
-    { label: "Date", value: date },
-    { label: paidTo && rows.some((r) => /payer/i.test(r.label)) ? "Paid By" : "Paid To", value: paidTo },
-    { label: "Transaction No", value: txnNo },
-    { label: "Payment Type", value: paymentType },
-    { label: "Currency", value: currency },
-  ].filter((r): r is { label: string; value: string } => Boolean(r.value));
-
-  const usedValues = new Set(preferredLabels.map((r) => r.value));
-  const extras = rows.filter(
-    (r) =>
-      !usedValues.has(r.value) &&
-      !/currency|payment method|date /i.test(r.label) &&
-      r.value !== phone &&
-      r.value !== paidTo &&
-      r.value !== txnNo,
-  );
-  const detailRows = [...preferredLabels, ...extras].slice(0, 8);
-
-  // —— Top brand ——
+  // Brand mark (simple indigo square — matches letterhead colour)
   doc.setFillColor(...INDIGO);
-  doc.roundedRect(margin, y, 26, 26, 7, 7, "F");
-  doc.setTextColor(...WHITE);
+  doc.roundedRect(margin, y, 28, 28, 6, 6, "F");
+  doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.text("M", margin + 8, y + 17);
+  doc.setFontSize(11);
+  doc.text("M", margin + 9, y + 18);
+
   doc.setTextColor(...INK);
-  doc.setFontSize(18);
-  doc.text(MBOKA_LETTERHEAD.product, margin + 34, y + 18);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text(MBOKA_LETTERHEAD.product, margin + 38, y + 14);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...MUTED);
+  doc.text(MBOKA_LETTERHEAD.tagline.toUpperCase(), margin + 38, y + 26);
+
+  // Classic short contact on the right (location + email)
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  MBOKA_LETTERHEAD.lines.forEach((line, i) => {
+    doc.text(line, pageW - margin, y + 12 + i * 11, { align: "right" });
+  });
   y += 48;
 
-  // —— Hero mark ——
-  drawHeroMark(doc, pageW / 2, y + 52, 88);
-  y += 120;
+  doc.setDrawColor(...LINE);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 22;
 
-  // —— Greeting ——
-  const name = greetingName(receipt, rows);
-  doc.setTextColor(...INDIGO);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text(`Hi ${name},`, pageW / 2, y, { align: "center" });
-  y += 20;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  const thanks = wrapText(
-    doc,
-    `Thank you for making your payment with ${MBOKA_LETTERHEAD.product}.`,
-    contentW * 0.85,
-    11,
-  );
-  doc.text(thanks, pageW / 2, y, { align: "center" });
-  y += thanks.length * 14 + 22;
-
-  // —— Amount card + detail column ——
-  const cardW = contentW * 0.42;
-  const detailX = margin + cardW + 18;
-  const detailW = contentW - cardW - 18;
-  const cardH = Math.max(118, 28 + detailRows.length * 18);
-
-  doc.setFillColor(...INDIGO_DEEP);
-  doc.roundedRect(margin, y, cardW, cardH, 4, 4, "F");
-  doc.setFillColor(...INDIGO);
-  doc.roundedRect(margin, y, cardW, cardH - 6, 4, 4, "F");
-
-  doc.setTextColor(...WHITE);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text(amountBoxLabel(receipt.amountCaption), margin + 14, y + 22);
-
+  doc.setTextColor(...INK);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
-  const amountLines = wrapText(doc, receipt.amount || "—", cardW - 28, 20);
-  doc.text(amountLines, margin + 14, y + 48);
+  const headingLines = wrapText(doc, receipt.heading, contentW, 20);
+  ensureSpace(headingLines.length * 24 + 8);
+  doc.text(headingLines, margin, y);
+  y += headingLines.length * 22 + 6;
 
-  if (phone) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    const phoneLabel = /\+?\d[\d\s-]{7,}/.test(phone) ? "Phone Number:" : "Account:";
-    const phoneLines = wrapText(doc, `${phoneLabel} ${phone}`, cardW - 28, 9);
-    doc.text(phoneLines, margin + 14, y + cardH - 18 - (phoneLines.length - 1) * 11);
-  }
-
-  let dy = y + 14;
-  for (const row of detailRows) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...MUTED);
-    doc.text(`${row.label}:`, detailX, dy);
+  if (receipt.statusBadge) {
+    doc.setFontSize(10);
     doc.setFont("helvetica", "bold");
+    doc.setTextColor(15, 122, 74);
+    doc.text(receipt.statusBadge.toUpperCase(), margin, y);
+    y += 18;
+  }
+
+  if (receipt.amount) {
+    ensureSpace(72);
+    doc.setFillColor(...TINT);
+    doc.roundedRect(margin, y, contentW, 64, 8, 8, "F");
+    doc.setTextColor(...INDIGO);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    if (receipt.amountCaption) {
+      doc.text(receipt.amountCaption.toUpperCase(), margin + 16, y + 20);
+    }
     doc.setTextColor(...INK);
-    const valueLines = wrapText(doc, row.value, detailW - 4, 9);
-    doc.text(valueLines, detailX, dy + 11);
-    dy += 11 + valueLines.length * 11 + 6;
+    doc.setFont("courier", "bold");
+    doc.setFontSize(22);
+    doc.text(receipt.amount, margin + 16, y + 44);
+    if (receipt.party) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...MUTED);
+      doc.text(receipt.party, margin + 16, y + 56);
+    }
+    y += 80;
   }
 
-  y += cardH + 28;
-
-  // —— Barcode band ——
-  drawBarcodeBand(doc, margin, y, contentW, 28);
-  y += 48;
-
-  // —— Footer contact (short letterhead style) ——
-  doc.setTextColor(...INDIGO);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text("Questions? Comments? Feel free to get in touch!", pageW / 2, y, {
-    align: "center",
-  });
-  y += 18;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  for (const line of MBOKA_LETTERHEAD.lines) {
-    doc.text(line, pageW / 2, y, { align: "center" });
-    y += 12;
-  }
-  y += 10;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text("Simple  ·  Transparent  ·  Honest", pageW / 2, y, { align: "center" });
-  y += 28;
-
-  // —— Bottom brand rule + mark ——
-  doc.setDrawColor(...INDIGO);
-  doc.setLineWidth(2.5);
-  doc.line(margin, pageH - 42, pageW - margin - 70, pageH - 42);
-  doc.setFillColor(...INDIGO);
-  doc.roundedRect(pageW - margin - 58, pageH - 58, 58, 28, 6, 6, "F");
-  doc.setTextColor(...WHITE);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text(MBOKA_LETTERHEAD.product, pageW - margin - 29, pageH - 40, { align: "center" });
-
-  if (receipt.footnote) {
+  for (const section of receipt.sections) {
+    ensureSpace(36);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
     doc.setTextColor(...MUTED);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7);
-    doc.text(receipt.footnote, margin, pageH - 18);
+    doc.text(section.title.toUpperCase(), margin, y);
+    y += 14;
+    doc.setDrawColor(...LINE);
+    doc.line(margin, y, pageW - margin, y);
+    y += 12;
+
+    for (const row of section.rows) {
+      const labelW = contentW * 0.38;
+      const valueW = contentW * 0.58;
+      const labelLines = wrapText(doc, row.label, labelW, 10);
+      const valueLines = wrapText(doc, row.value, valueW, 10);
+      const rowH = Math.max(labelLines.length, valueLines.length) * 13 + 10;
+      ensureSpace(rowH);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(...MUTED);
+      doc.text(labelLines, margin, y);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...INK);
+      doc.text(valueLines, margin + labelW + 8, y);
+      y += rowH;
+      doc.setDrawColor(...LINE);
+      doc.setLineWidth(0.4);
+      doc.line(margin, y - 6, pageW - margin, y - 6);
+    }
+    y += 10;
+  }
+
+  ensureSpace(90);
+  doc.setDrawColor(...LINE);
+  doc.setLineWidth(0.8);
+  doc.line(margin, y, pageW - margin, y);
+  y += 16;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...MUTED);
+  const foot = [
+    receipt.footnote,
+    `Generated ${new Date().toLocaleString()} · ${MBOKA_LETTERHEAD.product} business payments.`,
+    "This is a computer-generated receipt and does not require a signature.",
+  ].filter(Boolean) as string[];
+  for (const line of foot) {
+    const lines = wrapText(doc, line, contentW, 8);
+    ensureSpace(lines.length * 11 + 2);
+    doc.text(lines, margin, y);
+    y += lines.length * 11 + 2;
   }
 
   const filename = pdfFilename(filenameStem || receipt.fileTitle || "mboka-receipt");
@@ -275,7 +177,10 @@ export function buildReceiptPdfBlob(
   };
 }
 
-export function receiptPdfFile(blob: Blob, filename: string): File {
+export function receiptPdfFile(
+  blob: Blob,
+  filename: string,
+): File {
   return new File([blob], filename, { type: "application/pdf" });
 }
 
@@ -322,6 +227,7 @@ export async function shareReceiptPdf(opts: {
       return "shared";
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return "aborted";
+      // Fall through to download when a target rejects the file payload.
     }
   }
   try {
