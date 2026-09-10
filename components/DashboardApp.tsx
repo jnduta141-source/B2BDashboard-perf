@@ -2250,10 +2250,23 @@ export default function DashboardApp(props: Props = {}) {
         quoteSeconds: secondsUntilExpiry(quote.expires_at) || 120,
       });
     } catch (err) {
+      const upstream =
+        err instanceof ApiRequestError &&
+        err.data &&
+        typeof err.data === "object" &&
+        (err.data as { upstream?: { message?: unknown } }).upstream &&
+        typeof (err.data as { upstream?: { message?: unknown } }).upstream === "object"
+          ? String(
+              ((err.data as { upstream?: { message?: unknown } }).upstream as {
+                message?: unknown;
+              }).message || "",
+            ).trim()
+          : "";
       setState({
         convertQuoteLoading: false,
         convertError:
-          err instanceof Error ? err.message : "Couldn't get a conversion quote.",
+          upstream ||
+          (err instanceof Error ? err.message : "Couldn't get a conversion quote."),
       });
     }
   };
